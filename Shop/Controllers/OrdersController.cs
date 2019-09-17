@@ -33,27 +33,48 @@ namespace Shop.Controllers
             return result;
         }
 
+
+        //
         // GET: api/Orders/5
         [ResponseType(typeof(Order))]
         public IHttpActionResult GetOrder(long id)
         {
-            Order order = db.Orders.Find(id);
-            if (order == null)
-            {
-                return NotFound();
-            }
+            var order = (from a in db.Orders
+                         where a.OrderID == id
 
-            return Ok(order);
+                         select new
+                         {
+                             a.OrderID,
+                             a.OrderNo,
+                             a.CustomerID,
+                             a.PMethod,
+                             a.GTotal,
+                             DeletedOrderItemIDs = ""
+                         }).FirstOrDefault();
+
+            var orderDetails = (from a in db.OrderItems
+                                join b in db.Items on a.ItemID equals b.ItemID
+                                where a.OrderID == id
+
+                                select new
+                                {
+                                    a.OrderID,
+                                    a.OrderItemID,
+                                    a.ItemID,
+                                    ItemName = b.Name,
+                                    b.Price,
+                                    a.Quantity,
+                                    Total = a.Quantity * b.Price
+                                }).ToList();
+
+            return Ok(new { order, orderDetails });
         }
 
         // PUT: api/Orders/5
         [ResponseType(typeof(void))]
         public IHttpActionResult PutOrder(long id, Order order)
         {
-            if (!ModelState.IsValid)
-            {
-                return BadRequest(ModelState);
-            }
+            
 
             if (id != order.OrderID)
             {
@@ -85,25 +106,72 @@ namespace Shop.Controllers
         [ResponseType(typeof(Order))]
         public IHttpActionResult PostOrder(Order order)
         {
-            
-            db.Orders.Add(order);
-            foreach (var item in order.OrderItems)
+
+            //db.Orders.Add(order);
+            //foreach (var item in order.OrderItems)
+            //{
+            //    db.OrderItems.Add(item);
+            //}
+            //db.SaveChanges();
+            //return Ok();
+
+            try
             {
-                db.OrderItems.Add(item);
+                //Order table
+                if (order.OrderID == 0)
+                    db.Orders.Add(order);
+                else
+                    db.Entry(order).State = EntityState.Modified;
+
+                //OrderItems table
+                foreach (var item in order.OrderItems)
+                {
+                    if (item.OrderItemID == 0)
+                        db.OrderItems.Add(item);
+                    else
+                        db.Entry(item).State = EntityState.Modified;
+                }
+
+                //Delete for OrderItems
+                foreach (var id in order.DeletedOrderItemIDs.Split(',').Where(x => x != ""))
+                {
+                    OrderItem x = db.OrderItems.Find(Convert.ToInt64(id));
+                    db.OrderItems.Remove(x);
+                }
+
+
+                db.SaveChanges();
+
+                return Ok();
             }
-            db.SaveChanges();
-            return Ok();
-            //return CreatedAtRoute("DefaultApi", new { id = order.OrderID }, order);
+            catch (Exception ex)
+            {
+
+                throw ex;
+            }
         }
 
         // DELETE: api/Orders/5
         [ResponseType(typeof(Order))]
         public IHttpActionResult DeleteOrder(long id)
         {
-            Order order = db.Orders.Find(id);
-            if (order == null)
+            //Order order = db.Orders.Find(id);
+            //if (order == null)
+            //{
+            //    return NotFound();
+            //}
+
+            //db.Orders.Remove(order);
+            //db.SaveChanges();
+
+            //return Ok(order);
+
+            Order order = db.Orders.Include(y => y.OrderItems)
+                .SingleOrDefault(x => x.OrderID == id);
+
+            foreach (var item in order.OrderItems.ToList())
             {
-                return NotFound();
+                db.OrderItems.Remove(item);
             }
 
             db.Orders.Remove(order);
